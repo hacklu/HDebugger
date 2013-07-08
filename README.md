@@ -1,4 +1,4 @@
-debugger
+HDebugger
 ========
 
-debugger demo under GNU/Hurd
+A debugger demo under GNU/Hurd
