@@ -171,8 +171,8 @@ void * just_print(void *arg)
 {
 	int i=0;
 	while(1){
+		sleep(1); //here, If put this line behind printf(), the program will hang
 		printf("===========just_print say %d\n",i++);
-		sleep(1);
 	}
 }
 int main(int argc,char** argv)
