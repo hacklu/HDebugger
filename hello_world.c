@@ -1,5 +1,6 @@
 #include <stdio.h>
 int main()
 {
-	printf("hello gdb\n");
+	int num=1;
+	printf("hello gdb. %d\n",num);
 }
