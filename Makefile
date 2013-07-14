@@ -1,9 +1,23 @@
-all:demo hello_world
-demo:demo.c
-	gcc demo.c -g -o demo -lpthread  -Werror
-hello_world:hello_world.c
-	gcc hello_world.c -g -o hello_world
+CC=gcc
+#CFLAGS=-c -Wall -g
+CFLAGS=-c -g
+LDFLAGS=-lpthread
+SOURCE=demo.c exc_request_S.c
+OBJECTS=$(SOURCE:.c=.o)
+EXECUTEABLE=mydemo
+
+INFERIOR=hello_world
+
+all:$(SOURCE) $(EXECUTEABLE) $(INFERIOR)
+
+$(EXECUTEABLE):$(OBJECTS)
+	@$(CC) $(LDFLAGS) $(OBJECTS) -o $@
+$(INFERIOR):hello_world.o
+	@$(CC) $< -o $@
+.c.o:
+	@$(CC) $(CFLAGS) $< -o $@
 clean:
-	rm -rf demo hello_world
-test:demo
-	./demo hello_world
+	@rm -rf $(EXECUTEABLE) $(OBJECTS)
+
+test:all
+	./mydemo hello_world
