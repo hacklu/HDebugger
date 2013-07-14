@@ -2,5 +2,7 @@
 int main()
 {
 	int num=1;
-	printf("hello gdb. %d\n",num);
+	printf("######################hello gdb######################\n");
+	printf("######################num=%d######################\n",num);
+	return 0;
 }
