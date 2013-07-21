@@ -163,6 +163,8 @@ thread_array_t update_proc(mach_port_t task_port, mach_port_t event_port,thread_
 	*old_num = num_threads;
 	if(debug_level>0)
 		printf("now has %d threads\n",num_threads);
+	if(debug_level>0)
+		printf("in update() threads=%p\n",threads);
 	return threads;
 }
 
@@ -496,6 +498,7 @@ void run_debugger(pid_t child_pid)
 		exit(-1);
 	}
 
+	//the three my_wait to check the thread 1 thread 2 die, and new thread appears
 	threads = update_proc(task_port,event_port,threads,&num_threads);
 	my_wait(event_port, child_pid);
 
@@ -505,13 +508,11 @@ void run_debugger(pid_t child_pid)
 	threads = update_proc(task_port,event_port,threads,&num_threads);
 	my_wait(event_port, child_pid);
 
-	threads = update_proc(task_port,event_port,threads,&num_threads);
-	err = proc_wait_request(getproc(), event_port,child_pid,2);
 	if(err)
 		printf("err=%d\n",err);
 
 	//set breakpiont
-	int addr=0x8048510; //the second printf()
+	int addr=0x8048510; //the second printf();get from objdump -d
 	char old_value;
 
 	err=set_breakpoint(task_port,addr,&old_value);
@@ -520,7 +521,12 @@ void run_debugger(pid_t child_pid)
 		printf("set breakpiont fail\n");
 	/*addr=0x804854d; //jump the second printf(), bypass icache*/
 
+	while(!threads) {
+		/*sleep(1); //sometimes, if we call update_proc() to quick, the inferior hasn't create new thread, we will get NULL,so we need a little slower*/
+		threads = update_proc(task_port,event_port,threads,&num_threads);
+	}
 	my_thread_info(threads[0]);
+
 	//begin to run (after execl())
 	my_resume(threads,num_threads);
 
@@ -551,13 +557,15 @@ void run_debugger(pid_t child_pid)
 		err = thread_get_state (threads[0], THREAD_STATE_FLAVOR,(thread_state_t) &state, &state_size);
 		if(err)
 			printf("thread_get_state err=%d\n",err);
-		/*for(i=0;i<state_size;i++)*/
-		/*printf("%08x ",*((int*)&state+i));*/
-		/*printf("\n");*/
+		if(debug_level>1){
+			for(i=0;i<state_size;i++)
+			printf("%08x ",*((int*)&state+i));
+			printf("\n");
+		}
 		printf(">>>>>inferior hit breakpoint! at ");
 		printf(" eip=0x%08x\n",((struct i386_thread_state*)&state)->eip);
 
-		printf("please input any key to contine the inferiror:)\n");
+		printf("please input enter key to contine the inferiror:)\n");
 		getchar();
 		//recovery
 		{
@@ -575,7 +583,6 @@ void run_debugger(pid_t child_pid)
 
 			/*threads = update_proc(task_port,event_port,threads,&num_threads);*/
 			my_signal(child_pid,task_port,event_port,0);
-			/*my_resume(threads,num_threads);*/
 
 			do_wait(event_port,&msg);
 			task_suspend(task_port);
@@ -584,38 +591,21 @@ void run_debugger(pid_t child_pid)
 
 			msg_reply_server(&msg.hdr, &reply.hdr);
 
-			/*printf("++++++++++++++++++++++\n");*/
-			/*my_thread_info(threads[0]);*/
-			/*my_task_info(task_port);*/
-
-			/*printf("++++++++++++++++++++++\n");*/
 			thread_abort(threads[0]);  //this is the continue magic!!
 			task_resume(task_port);
 
-			/*my_thread_info(threads[0]);*/
-			/*my_task_info(task_port);*/
-			/*do_wait(event_port,&msg);*/
-			my_wait(event_port, child_pid);
-
-			/*err = thread_get_state (threads[0], THREAD_STATE_FLAVOR,(thread_state_t) &state, &state_size);*/
-			/*if(err)*/
-				/*printf("thread_get_state err=%d\n",err);*/
-			/*for(i=0;i<state_size;i++)*/
-			/*printf("%08x ",*((int*)&state+i));*/
-			/*printf("\n");*/
-			/*printf("thread eip=0x%08x\n",((struct i386_thread_state*)&state)->eip);*/
 		}
 	}
 
+	if(debug_level>0){ //check exit message
+		my_wait(event_port, child_pid);
+		my_wait(event_port, child_pid);
+		do_wait(event_port,&msg);
+		do_wait(event_port,&msg);
+		do_wait(event_port,&msg);
+	}
+
 	printf("debugger will exit in 3s..\n");
-	/*while(0){*/
-		/*do_wait(event_port,&msg);*/
-		/*my_thread_info(threads[0]);*/
-		/*[>thread_abort(threads[0])<]*/
-		/*my_resume(threads,num_threads);*/
-		/*my_thread_info(threads[0]);*/
-	/*}*/
-	/*sleep(3);*/
 	int exit_time=3;
 	while(exit_time--){
 		sleep(1);
