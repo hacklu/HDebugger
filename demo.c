@@ -20,9 +20,10 @@
 #include <mach/mig_errors.h>
 
 #include "exc_request_S.h"
+#include "msg_reply_S.h"
 
 #define THREAD_STATE_FLAVOR i386_REGS_SEGS_STATE
-#define DEBUG_ON 2
+#define DEBUG_ON 0
 static int debug_level = DEBUG_ON;
 
 struct msg_t
@@ -57,9 +58,11 @@ struct i386_thread_state {
 error_t do_wait(mach_port_t port, struct msg_t* mymsg)
 {
 	error_t err;
-	printf("waiting for an event...\n");
+	if(debug_level>0)
+		printf("waiting for an event...\n");
 	err = mach_msg(&(mymsg->hdr),MACH_RCV_MSG | MACH_RCV_INTERRUPT,0,sizeof(struct msg_t), port,MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
-	printf("get event msg id = %d\n",mymsg->hdr.msgh_id);
+	if(debug_level>0)
+		printf("get event msg id = %d\n",mymsg->hdr.msgh_id);
 	return err;
 }
 
@@ -115,7 +118,6 @@ thread_array_t update_proc(mach_port_t task_port, mach_port_t event_port,thread_
 	error_t err;
 	thread_array_t threads;
 	mach_msg_type_number_t num_threads=0,i;
-	/*thread_state_t state;*/
 	mach_port_t prev_port;
 
 	if(debug_level>0)
@@ -123,7 +125,6 @@ thread_array_t update_proc(mach_port_t task_port, mach_port_t event_port,thread_
 	err = task_threads(task_port,&threads,&num_threads);
 	if(err)
 		printf("error: task_threads %d\n",err);
-	/*printf("get %d threads\n",num_threads);*/
 	int *match = NULL;
 	match = malloc(sizeof(int) * (int)num_threads);
 	memset(match,0,sizeof(int) * (int)num_threads);
@@ -138,13 +139,14 @@ thread_array_t update_proc(mach_port_t task_port, mach_port_t event_port,thread_
 			}
 		}
 		if(!left){ //thread died
-			printf("died thread [%d]\n",(int)old[j]);
+			if(debug_level>0)
+				printf("died thread [%d]\n",(int)old[j]);
 		}
 	}
 	for(i=0;i< num_threads;i++){
 		if(match[i]==0){
-			printf("new thread [%d]\n",(int)threads[i]);
-			/*printf("new thread [%d]\n",threads[i]);*/
+			if(debug_level>0)
+				printf("new thread [%d]\n",(int)threads[i]);
 			err = thread_set_exception_port(threads[i],event_port);
 			if(err)
 				printf("error: thread_set_exception_port\n");
@@ -230,7 +232,7 @@ int my_vm_write(mach_port_t task, unsigned long addr, char *data, int length)
 		 aligned_length,
 		 &copied,
 		 &copy_count);
-  CHK_GOTO_OUT ("gnu_write_inferior vm_read failed", err);
+  CHK_GOTO_OUT ("my_vm_write vm_read failed", err);
 
   deallocate++;
 
@@ -414,33 +416,73 @@ S_exception_raise_request (mach_port_t port, mach_port_t reply_port,
 			   int exception, int code, int subcode)
 {
 
-  printf("thread = %d, task = %d, exc = %d, code = %d, subcode = %d\n",(int)thread_port, (int)task_port, exception, code, subcode);
-  return 0;
+	if(debug_level>0)
+		printf("thread = %d, task = %d, exc = %d, code = %d, subcode = %d\n",(int)thread_port, (int)task_port, exception, code, subcode);
+	return 0;
 }
 
+error_t S_msg_sig_post_untraced_reply (mach_port_t reply_port, kern_return_t return_code)
+{
+	if(debug_level>0)
+		printf("in msg_sig_post_untraced_request_reply() reply_port=%d, return_code=%d\n",reply_port,return_code);
+	return 0;
+}
+
+error_t S_msg_sig_post_reply (mach_port_t reply_port, kern_return_t return_code)
+{
+	return 0;
+}
+
+void my_thread_info(mach_port_t thread)
+{
+	thread_basic_info_data_t _info;
+	thread_basic_info_t info= &_info;
+	mach_msg_type_number_t info_len= THREAD_BASIC_INFO_COUNT;
+	error_t err;
+
+	err =thread_info (thread, THREAD_BASIC_INFO, (int *) info, &info_len);
+	if (err)
+		printf("get thread_info() error=%d\n",err);
+	if(debug_level>0){
+		printf("thread [%d] suspend_count=%d\n",thread,(&_info)->suspend_count);
+		printf("run_state=%d, flags=%d, sleep_time=%d, creation_time.second=%d\n",info->run_state,info->flags,info->sleep_time,info->creation_time.seconds);
+	}
+}
+
+void my_task_info(mach_port_t task)
+{
+	task_basic_info_data_t _info;
+	task_basic_info_t info= &_info;
+	mach_msg_type_number_t info_len= TASK_BASIC_INFO_COUNT;
+	error_t err;
+
+	err =task_info (task, TASK_BASIC_INFO, (int *) info, &info_len);
+	if (err)
+		printf("get task_info() error=%d\n",err);
+	if(debug_level>0){
+		printf("task [%d] suspend_count=%d\n",task,(&_info)->suspend_count);
+		printf("creation_time.second=%d\n",info->creation_time.seconds);
+	}
+
+}
 void run_debugger(pid_t child_pid)
 {
 	/*printf("father says:%d\n",getpid());*/
-	/*int wait_status;*/
-	/*unsigned iconuter = 0;*/
 	error_t err;
 	mach_port_t event_port;
-	/*mach_port_t prev_port=MACH_PORT_NULL;*/
 	task_t task_port;
 	thread_array_t threads=0;
-	/*thread_array_t threads_tmp=0;*/
 	mach_msg_type_number_t num_threads=0,i;
 	thread_state_data_t state;
 	mach_msg_type_number_t state_size = i386_THREAD_STATE_COUNT;
 
 	err = mach_port_allocate(mach_task_self(),
-				MACH_PORT_RIGHT_RECEIVE, &event_port);
+			MACH_PORT_RIGHT_RECEIVE, &event_port);
 	if(err)
 		printf("error: allocating event port\n");
-		/*printf("error: allocating event port:%s",safe_strerror(err));*/
 
 	mach_port_insert_right(mach_task_self(),
-				event_port,event_port,MACH_MSG_TYPE_MAKE_SEND);
+			event_port,event_port,MACH_MSG_TYPE_MAKE_SEND);
 	err = proc_pid2task(getproc(),child_pid,&task_port);
 	if(err)
 		printf("error: proc_pid2task\n");
@@ -449,39 +491,36 @@ void run_debugger(pid_t child_pid)
 	if(err)
 		printf("error: task_set_exception_port\n");
 
-	if(task_port){
-		threads = update_proc(task_port,event_port,threads,&num_threads);
-		my_wait(event_port, child_pid);
+	if(!task_port){
+		printf("error: task_port is NULL\n");
+		exit(-1);
 	}
-		threads = update_proc(task_port,event_port,threads,&num_threads);
-		my_wait(event_port, child_pid);
-		
-		threads = update_proc(task_port,event_port,threads,&num_threads);
-		my_wait(event_port, child_pid);
 
-		threads = update_proc(task_port,event_port,threads,&num_threads);
+	threads = update_proc(task_port,event_port,threads,&num_threads);
+	my_wait(event_port, child_pid);
+
+	threads = update_proc(task_port,event_port,threads,&num_threads);
+	my_wait(event_port, child_pid);
+
+	threads = update_proc(task_port,event_port,threads,&num_threads);
+	my_wait(event_port, child_pid);
+
+	threads = update_proc(task_port,event_port,threads,&num_threads);
 	err = proc_wait_request(getproc(), event_port,child_pid,2);
 	if(err)
 		printf("err=%d\n",err);
 
-
 	//set breakpiont
-	/*int addr=0x80484ec; //main()*/
-	int addr=0x8048548; //the second printf()
+	int addr=0x8048510; //the second printf()
 	char old_value;
-	
+
 	err=set_breakpoint(task_port,addr,&old_value);
+	/*err=set_breakpoint(task_port,0x804851c,&old_value);*/
 	if(err)
 		printf("set breakpiont fail\n");
+	/*addr=0x804854d; //jump the second printf(), bypass icache*/
 
-	/*err = thread_get_state (threads[0], THREAD_STATE_FLAVOR,(thread_state_t) &state, &state_size);*/
-	/*if(err)*/
-		/*printf("thread_get_state err=%d\n",err);*/
-	/*for(i=0;i<state_size;i++)*/
-		/*printf("%08x ",*((int*)&state+i));*/
-	/*printf("\n");*/
-	/*printf("thread eip=0x%08x\n",((struct i386_thread_state*)&state)->eip);*/
-
+	my_thread_info(threads[0]);
 	//begin to run (after execl())
 	my_resume(threads,num_threads);
 
@@ -490,58 +529,100 @@ void run_debugger(pid_t child_pid)
 
 	if(msg.hdr.msgh_id==2400) //handle int3 !!
 	{
-	      struct
+		my_thread_info(threads[0]);
+		my_task_info(task_port);
+		/*my_suspend(threads,num_threads);*/
+		my_thread_info(threads[0]);
+		my_thread_info(threads[0]);
+		struct
 		{
-		  mach_msg_header_t hdr;
-		  mach_msg_type_t err_type;
-		  kern_return_t err;
-		  char noise[200];
+			mach_msg_header_t hdr;
+			mach_msg_type_t err_type;
+			kern_return_t err;
+			char noise[200];
 		}reply;
-	  	exc_server(&msg.hdr, &reply.hdr);
+		exc_server(&msg.hdr, &reply.hdr);
 
-		printf(">>>>>>>>>>>>>>>handle int3\n");
 		threads = update_proc(task_port,event_port,threads,&num_threads);
-		for(i=0;i<num_threads;i++)
-			printf("threads[%d]=%d\n",i,(int)threads[i]);
+		if(debug_level>0)
+			for(i=0;i<num_threads;i++)
+				printf("threads[%d]=%d\n",i,(int)threads[i]);
 		/*printf("sizeof thread_state_t = %d\n",sizeof(thread_state_t));*/
 		err = thread_get_state (threads[0], THREAD_STATE_FLAVOR,(thread_state_t) &state, &state_size);
 		if(err)
 			printf("thread_get_state err=%d\n",err);
-		for(i=0;i<state_size;i++)
-			printf("%08x ",*((int*)&state+i));
-		printf("\n");
-		printf("thread eip=0x%08x\n",((struct i386_thread_state*)&state)->eip);
+		/*for(i=0;i<state_size;i++)*/
+		/*printf("%08x ",*((int*)&state+i));*/
+		/*printf("\n");*/
+		printf(">>>>>inferior hit breakpoint! at ");
+		printf(" eip=0x%08x\n",((struct i386_thread_state*)&state)->eip);
 
+		printf("please input any key to contine the inferiror:)\n");
+		getchar();
 		//recovery
 		{
-		printf("task_port=%d, addr=0x%08x,old_value=0x%02x\n",(int)task_port,addr, old_value&0xff);
-		err = remove_breakpoint(task_port,addr,old_value);
-		if(err){
-			printf("remove_breakpoint error\n");
-		exit(0);
+			/*printf("task_port=%d, addr=0x%08x,old_value=0x%02x\n",(int)task_port,addr, old_value&0xff);*/
+			err = remove_breakpoint(task_port,addr,old_value);
+			if(err){
+				printf("remove_breakpoint error\n");
+				exit(0);
+			}
+			((struct i386_thread_state*)&state)->eip--;
+			/*((struct i386_thread_state*)&state)->eip=0x804854d; //bypass breakpoint*/
+			err = thread_set_state (threads[0], THREAD_STATE_FLAVOR,(thread_state_t) &state, i386_THREAD_STATE_COUNT);
+			if(err)
+				printf("thread_set_state err=%d\n",err);
+
+			/*threads = update_proc(task_port,event_port,threads,&num_threads);*/
+			my_signal(child_pid,task_port,event_port,0);
+			/*my_resume(threads,num_threads);*/
+
+			do_wait(event_port,&msg);
+			task_suspend(task_port);
+			my_thread_info(threads[0]);
+			my_task_info(task_port);
+
+			msg_reply_server(&msg.hdr, &reply.hdr);
+
+			/*printf("++++++++++++++++++++++\n");*/
+			/*my_thread_info(threads[0]);*/
+			/*my_task_info(task_port);*/
+
+			/*printf("++++++++++++++++++++++\n");*/
+			thread_abort(threads[0]);  //this is the continue magic!!
+			task_resume(task_port);
+
+			/*my_thread_info(threads[0]);*/
+			/*my_task_info(task_port);*/
+			/*do_wait(event_port,&msg);*/
+			my_wait(event_port, child_pid);
+
+			/*err = thread_get_state (threads[0], THREAD_STATE_FLAVOR,(thread_state_t) &state, &state_size);*/
+			/*if(err)*/
+				/*printf("thread_get_state err=%d\n",err);*/
+			/*for(i=0;i<state_size;i++)*/
+			/*printf("%08x ",*((int*)&state+i));*/
+			/*printf("\n");*/
+			/*printf("thread eip=0x%08x\n",((struct i386_thread_state*)&state)->eip);*/
 		}
-		((struct i386_thread_state*)&state)->eip--;
-		err = thread_set_state (threads[0], THREAD_STATE_FLAVOR,(thread_state_t) &state, i386_THREAD_STATE_COUNT);
-		if(err)
-			printf("thread_set_state err=%d\n",err);
-		}
-
-
-
-		
-		my_signal(child_pid,task_port,event_port,0);
-		do_wait(event_port,&msg);
-		/*do_wait(event_port,&msg);*/
-
-		threads = update_proc(task_port,event_port,threads,&num_threads);
-		my_resume(threads,num_threads);
-		task_resume(task_port);
 	}
 
-
-
 	printf("debugger will exit in 3s..\n");
-	sleep(3);
+	/*while(0){*/
+		/*do_wait(event_port,&msg);*/
+		/*my_thread_info(threads[0]);*/
+		/*[>thread_abort(threads[0])<]*/
+		/*my_resume(threads,num_threads);*/
+		/*my_thread_info(threads[0]);*/
+	/*}*/
+	/*sleep(3);*/
+	int exit_time=3;
+	while(exit_time--){
+		sleep(1);
+		printf(".");
+		fflush(stdout);
+	}
+	printf("\n");
 }
 
 void run_target(const char* programname)
@@ -573,7 +654,7 @@ int main(int argc,char** argv)
 		exit(-1);
 	}
 
-	pthread_create( &thread_print,NULL,just_print,(void*)NULL);
+	/*pthread_create( &thread_print,NULL,just_print,(void*)NULL);*/
 	/*sleep(1);*/ //if add this, the world change!!! don't know why
 
 	int pid=0;
