@@ -1,4 +1,6 @@
 /*
+			my_thread_info(threads[0]);
+			my_task_info(task_port);
  * 	Debugger Demo in GNU/Hurd 
  * 	write by hacklu @2013
  *
@@ -577,22 +579,24 @@ void run_debugger(pid_t child_pid)
 			}
 			((struct i386_thread_state*)&state)->eip--;
 			/*((struct i386_thread_state*)&state)->eip=0x804854d; //bypass breakpoint*/
+
+			/*threads = update_proc(task_port,event_port,threads,&num_threads);*/
+			/*my_signal(child_pid,task_port,event_port,0);*/
+
+			/*do_wait(event_port,&msg);*/
+			/*task_suspend(task_port);*/
+			thread_suspend(threads[0]);
+
+			/*msg_reply_server(&msg.hdr, &reply.hdr);*/
+
+			thread_abort(threads[0]);  //this is the continue magic!!
+			my_thread_info(threads[0]);
+			my_task_info(task_port);
 			err = thread_set_state (threads[0], THREAD_STATE_FLAVOR,(thread_state_t) &state, i386_THREAD_STATE_COUNT);
 			if(err)
 				printf("thread_set_state err=%d\n",err);
-
-			/*threads = update_proc(task_port,event_port,threads,&num_threads);*/
-			my_signal(child_pid,task_port,event_port,0);
-
-			do_wait(event_port,&msg);
-			task_suspend(task_port);
-			my_thread_info(threads[0]);
-			my_task_info(task_port);
-
-			msg_reply_server(&msg.hdr, &reply.hdr);
-
-			thread_abort(threads[0]);  //this is the continue magic!!
-			task_resume(task_port);
+			/*task_resume(task_port);*/
+			thread_resume(threads[0]);
 
 		}
 	}
