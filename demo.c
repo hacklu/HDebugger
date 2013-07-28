@@ -1,6 +1,4 @@
 /*
-			my_thread_info(threads[0]);
-			my_task_info(task_port);
  * 	Debugger Demo in GNU/Hurd 
  * 	write by hacklu @2013
  *
